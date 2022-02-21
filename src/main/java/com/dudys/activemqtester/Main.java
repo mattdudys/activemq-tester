@@ -41,9 +41,13 @@ public class Main {
 
     private static String brokerUrl;
 
+    private static String userName;
+
+    private static String password;
+
     private static int n;
 
-    public static void main(String args[]) throws JMSException, IllegalAccessException {
+    public static void main(String args[]) throws IllegalAccessException {
         brokerUrl = System.getProperty("brokerUrl", "tcp://localhost:61616");
         queueName = System.getProperty("queueName", "test_" + UUID.randomUUID().toString().replace("-", ""));
         n = Integer.parseInt(System.getProperty("n", "100000"));
@@ -54,6 +58,8 @@ public class Main {
         deliveryPersistent = Boolean.parseBoolean(System.getProperty("deliveryPersistent", "true"));
         sessionAcknowledgeMode = Integer.parseInt(System.getProperty("sessionAcknowledgeMode", "3")); // DUPS_OK
         concurrentConsumers = Integer.parseInt(System.getProperty("concurrentConsumers", "1"));
+        userName = System.getProperty("userName", null);
+        password = System.getProperty("password", null);
 
         for (Field f : Main.class.getDeclaredFields()) {
             LOGGER.info("{}: {}", f.getName(), f.get(null));
@@ -72,6 +78,12 @@ public class Main {
         final ActiveMQConnectionFactory cf = new ActiveMQConnectionFactory(brokerUrl);
         cf.setUseAsyncSend(useAsyncSend);
         cf.setPrefetchPolicy(pfp);
+        if (userName != null) {
+            cf.setUserName(userName);
+        }
+        if (password != null) {
+            cf.setPassword(password);
+        }
         final PooledConnectionFactory pcf = new PooledConnectionFactory(cf);
         pcf.setMaxConnections(2);
 
