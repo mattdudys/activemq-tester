@@ -19,7 +19,7 @@ import javax.jms.Queue;
 import javax.jms.Session;
 import java.lang.reflect.Field;
 import java.util.UUID;
-import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.*;
 
 public class Main {
 
@@ -47,6 +47,8 @@ public class Main {
 
     private static int n;
 
+    private static boolean concurrentProduceConsume;
+
     public static void main(String args[]) throws IllegalAccessException {
         brokerUrl = System.getProperty("brokerUrl", "tcp://localhost:61616");
         queueName = System.getProperty("queueName", "test_" + UUID.randomUUID().toString().replace("-", ""));
@@ -60,14 +62,31 @@ public class Main {
         concurrentConsumers = Integer.parseInt(System.getProperty("concurrentConsumers", "1"));
         userName = System.getProperty("userName", null);
         password = System.getProperty("password", null);
+        concurrentProduceConsume = Boolean.parseBoolean(System.getProperty("concurrentProduceConsume", "false"));
 
         for (Field f : Main.class.getDeclaredFields()) {
             LOGGER.info("{}: {}", f.getName(), f.get(null));
         }
 
         final ConnectionFactory cf = setupConnectionFactory();
-        publish(cf, n);
-        consume(cf, n);
+        if (concurrentProduceConsume) {
+            LOGGER.info("producing and consuming concurrently");
+            ExecutorService executorService = Executors.newFixedThreadPool(2);
+            Future<?> publishFuture = executorService.submit(() -> publish(cf, n));
+            Future<?> consumeFuture = executorService.submit(() -> consume(cf, n));
+            try {
+                publishFuture.get();
+                consumeFuture.get();
+            } catch (InterruptedException | ExecutionException e) {
+                LOGGER.warn("Interrupted while waiting for publish and consume tasks to finish.", e);
+                publishFuture.cancel(true);
+                consumeFuture.cancel(true);
+            }
+        } else {
+            LOGGER.info("producing then consuming serially.");
+            publish(cf, n);
+            consume(cf, n);
+        }
         System.exit(0);
     }
 
@@ -136,13 +155,10 @@ public class Main {
         final Session s = c.createSession(sessionTransacted, sessionAcknowledgeMode);
         final Queue q = s.createQueue(queueName);
         final MessageConsumer mc = s.createConsumer(q);
-        mc.setMessageListener(new MessageListener() {
-            @Override
-            public void onMessage(Message message) {
-                latch.countDown();
-                if (latch.getCount() % 5000 == 0) {
-                    LOGGER.info("Remaining: {}", latch.getCount());
-                }
+        mc.setMessageListener(message -> {
+            latch.countDown();
+            if (latch.getCount() % 5000 == 0) {
+                LOGGER.info("Remaining: {}", latch.getCount());
             }
         });
 
